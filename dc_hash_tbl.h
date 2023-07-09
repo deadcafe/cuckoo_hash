@@ -20,21 +20,12 @@
 /*
  * fixed params
  */
-#define DCHT_BUCKET_ENTRY_SZ		((DCHT_CACHELINE_SIZE / sizeof(uint64_t)) - 1)
+#define DCHT_BUCKET_ENTRY_SZ		(DCHT_CACHELINE_SIZE / sizeof(uint64_t))
 #define DCHT_BUCKET_FULL		((1u << DCHT_BUCKET_ENTRY_SZ) - 1)
 #define DCHT_NB_ENTRIES_MIN		64
 #define DCHT_FOLLOW_DEPTH_DEFAULT	3
+#define	DCHT_UNUSED_KEY			0
 
-/*
- * Only the writing thread can update
- */
-union dcht_bucket_state_u {
-        uint32_t state32;
-        struct {
-                uint16_t validities;	/* validity bit of entry data */
-                uint16_t sequence;	/*  increments each time update validities */
-        };
-};
 
 /*
  * bucket table : must be cacheline size alignment
@@ -43,12 +34,8 @@ struct dcht_bucket_s {
         /* entry keys */
         uint32_t key[DCHT_BUCKET_ENTRY_SZ];
 
-        /* The reader thread checks the updated state of the writer thread */
-        union dcht_bucket_state_u state;
-
         /* entry value */
         uint32_t val[DCHT_BUCKET_ENTRY_SZ];
-        uint32_t _reserved;
 } __attribute__ ((aligned(DCHT_CACHELINE_SIZE)));
 
 /*
@@ -69,6 +56,8 @@ enum dcht_event_e {
  * cuckoo hash table
  */
 struct dcht_hash_table_s {
+        size_t size;
+
         unsigned nb_buckets;
         unsigned nb_entries;
 
@@ -79,7 +68,7 @@ struct dcht_hash_table_s {
         int follow_depth;
 
         unsigned retry_hash;		/* for debug, retry hash counter */
-        unsigned _reserved;
+        unsigned _padding;
 
         /* event notification callback for debug */
         void (*event_notify_cb)(void *,			/* arg */
@@ -106,14 +95,14 @@ extern size_t dcht_hash_table_size(unsigned max_entries);
 /**
  * @brief Initialize the hash table
  *
- * @param tbl: hash table pointer(Must be cacheline size agined)
+ * @param tbl: hash table pointer(Must be cacheline size algined)
  * @param size: size of hash table
  * @param max_entries: Maximum registration number
- * @return initialized hash table pointer
+ * @return success then zero, failuer thern negative
  */
-extern struct dcht_hash_table_s * dcht_hash_table_init(struct dcht_hash_table_s * tbl,
-                                                       size_t size,
-                                                       unsigned max_entries);
+extern int dcht_hash_table_init(struct dcht_hash_table_s * tbl,
+                                size_t size,
+                                unsigned max_entries);
 
 /**
  * @brief create hash table
@@ -193,7 +182,8 @@ extern int dcht_hash_find(struct dcht_hash_table_s * tbl,
 extern int dcht_hash_add_in_buckets(struct dcht_hash_table_s * tbl,
                                     struct dcht_bucket_s ** bk_p,
                                     uint32_t key,
-                                    uint32_t val);
+                                    uint32_t val,
+                                    bool skip_update);
 
 /**
  * @brief add key and value in hash table
@@ -205,7 +195,8 @@ extern int dcht_hash_add_in_buckets(struct dcht_hash_table_s * tbl,
  */
 extern int dcht_hash_add(struct dcht_hash_table_s * tbl,
                          uint32_t key,
-                         uint32_t val);
+                         uint32_t val,
+                         bool skip_update);
 
 /**
  * @brief delete key in hash table
@@ -241,5 +232,18 @@ extern int dcht_hash_del(struct dcht_hash_table_s * tbl,
 extern int dcht_hash_walk(struct dcht_hash_table_s * tbl,
                           int (*bucket_cb)(void *, const struct dcht_bucket_s *),
                           void * arg);
+
+/**
+ * @brief Unit Test in hash table
+ *
+ * @param tbl: hash table pointer
+ * @return All Ok then Zero, else then negative
+ */
+extern int dcht_hash_utest(struct dcht_hash_table_s * tbl);
+
+/*
+ * return number of used keys in bucket
+ */
+extern unsigned dcht_hash_bucket_keys_nb(const struct dcht_bucket_s * bk);
 
 #endif	/* !_DC_HASH_TBL_H_ */

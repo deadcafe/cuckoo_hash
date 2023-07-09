@@ -16,8 +16,6 @@
 struct req_s {
         uint32_t key;
         uint32_t val;
-        bool is_valid;
-        bool overwrite;
 };
 
 struct notify_s {
@@ -66,32 +64,31 @@ static inline void
 bucket_dump(struct dcht_hash_table_s * tbl,
             struct dcht_bucket_s * bk)
 {
-        uint32_t flags = bk->state.validities;
+        fprintf(stderr, "  bk:%p id:%u\n", bk, bucket_id(tbl, bk));
 
-        fprintf(stderr, "  bk:%p id:%u seq:%u flags:0x%0x\n",
-                bk, bucket_id(tbl, bk), bk->state.sequence, flags);
+        for (unsigned pos = 0; pos < DCHT_BUCKET_ENTRY_SZ; pos++) {
+                if (bk->key[pos] == DCHT_UNUSED_KEY)
+                        continue;
 
-        if (flags) {
+                struct dcht_bucket_s * bk_p[2];
+                unsigned id[2];
 
-                for (unsigned pos = 0; flags; pos++, flags >>= 1) {
-                        struct dcht_bucket_s * bk_p[2];
-                        unsigned id[2];
+                dcht_hash_buckets_prefetch(tbl, bk->key[pos], bk_p);
+                id[0] = bucket_id(tbl, bk_p[0]);
+                id[1] = bucket_id(tbl, bk_p[1]);
 
-                        dcht_hash_buckets_prefetch(tbl, bk->key[pos], bk_p);
-                        id[0] = bucket_id(tbl, bk_p[0]);
-                        id[1] = bucket_id(tbl, bk_p[1]);
-
-                        fprintf(stderr, "    pos:%u key:%u val:%u id#0:%u id#1:%u\n",
-                                pos, bk->key[pos], bk->val[pos],
-                                id[0], id[1]);
-                }
+                fprintf(stderr, "    pos:%u key:%u val:%u id#0:%u id#1:%u\n",
+                        pos, bk->key[pos], bk->val[pos],
+                        id[0], id[1]);
         }
 }
 
 static inline void
-table_dump(struct dcht_hash_table_s * tbl)
+table_dump(const char * msg,
+           struct dcht_hash_table_s * tbl)
 {
-        fprintf(stderr, "nb_bk:%u nb_ent:%u msk:0x%0x max:%u cur:%u depth:%d FullRate:%.02f%%\n",
+        fprintf(stderr, "%s nb_bk:%u nb_ent:%u msk:0x%0x max:%u cur:%u depth:%d FullRate:%.02f%%\n",
+                msg,
                 tbl->nb_buckets, tbl->nb_entries,
                 tbl->mask, tbl->max_entries,
                 tbl->current_entries, tbl->follow_depth,
@@ -133,7 +130,7 @@ notify_cb(void *arg,
                                 bucket_id(notify->tbl, bk),
                                 pos,
                                 key, val, seq);
-                        table_dump(notify->tbl);
+                        table_dump("Event Bucket Full", notify->tbl);
                         bucket_dump(notify->tbl, bk);
                         break;
 
@@ -145,7 +142,7 @@ notify_cb(void *arg,
                                 bucket_id(notify->tbl, bk),
                                 pos,
                                 key, val, seq);
-                        table_dump(notify->tbl);
+                        table_dump("Event Move Entry", notify->tbl);
                         bucket_dump(notify->tbl, bk);
                         break;
 
@@ -157,7 +154,7 @@ notify_cb(void *arg,
                                 bucket_id(notify->tbl, bk),
                                 pos,
                                 key, val, seq);
-                        table_dump(notify->tbl);
+                        table_dump("Event Cuckoo Replaced", notify->tbl);
                         bucket_dump(notify->tbl, bk);
                         break;
 
@@ -182,7 +179,6 @@ notify_cb(void *arg,
                         table_dump(notify->tbl);
                         bucket_dump(notify->tbl, bk);
 #endif
-                        req[seq].overwrite = true;
                         break;
 
                 default:
@@ -202,25 +198,33 @@ verify_cb(void * arg,
           const struct dcht_bucket_s * bk)
 {
         struct walk_s * wk = arg;
-        union dcht_bucket_state_u st;
+        unsigned nb_keys = dcht_hash_bucket_keys_nb(bk);
+        unsigned nb = 0;
 
-        st.state32 = bk->state.state32;
-        uint32_t flags = st.validities;
+        for (unsigned i = 0; i < DCHT_BUCKET_ENTRY_SZ; i++) {
+                if (bk->key[i] == DCHT_UNUSED_KEY)
+                        continue;
+                nb += 1;
 
-        for (unsigned i = 0; i < DCHT_BUCKET_ENTRY_SZ; i++)
-                if (flags & (1u << i)) {
-                        struct dcht_bucket_s * bk_p[2];
-                        uint32_t key = bk->key[i];
+                struct dcht_bucket_s * bk_p[2];
+                uint32_t key = bk->key[i];
 
-                        dcht_hash_buckets_prefetch(wk->tbl, key, bk_p);
-                        if (bk_p[0] != bk && bk_p[1] != bk) {
-                                fprintf(stderr,
-                                        "not matched key bk:%p pos:%u key:%u val:%u\n",
-                                        bk, i, key, bk->val[i]);
-                                return -1;
-                        }
-                        wk->nb += 1;
+                /* hash check */
+                dcht_hash_buckets_prefetch(wk->tbl, key, bk_p);
+                if (bk_p[0] != bk && bk_p[1] != bk) {
+                        fprintf(stderr,
+                                "not matched key bk:%p pos:%u key:%u val:%u\n",
+                                bk, i, key, bk->val[i]);
+                        return -1;
                 }
+        }
+
+        if (nb != nb_keys) {
+                fprintf(stderr, "not matched valid key. nb:%u keys:%u\n",
+                        nb, nb_keys);
+                return -1;
+        }
+        wk->nb += nb_keys;
         return 0;
 }
 
@@ -258,24 +262,6 @@ verify_tbl(struct dcht_hash_table_s * tbl,
         else
                 fprintf(stderr, "%s:Verify Ok. %s\n", func, msg);
         return ret;
-}
-
-static inline struct req_s *
-resize_req(struct req_s * old,
-           unsigned nb)
-{
-        struct req_s * req = calloc(nb, sizeof(*req));
-        unsigned i = 0, j = 0;
-
-        while (i < nb) {
-                if (old[j].is_valid) {
-                        req[i] = old[j];
-                        i++;
-                }
-                j++;
-        }
-        free(old);
-        return req;
 }
 
 /*
@@ -380,7 +366,8 @@ vec_add_next(struct dcht_hash_table_s * tbl,
         for (int i = 0; i < fetch_nb; i++) {
                 cur_vec->ret[i] =
                         dcht_hash_add_in_buckets(tbl, cur_vec->bk_p[i],
-                                                 cur_req[i].key, cur_req[i].val);
+                                                 cur_req[i].key, cur_req[i].val,
+                                                 true);
         }
 
         for (int i = 0; i < fetch_nb; i++) {
@@ -487,6 +474,8 @@ pre_register(struct dcht_hash_table_s * tbl,
         struct notify_s notify;
         char rand_state[256];
 
+        table_dump("Start Pre-Register", tbl);
+
         memset(&notify, 0, sizeof(notify));
 
         notify.tbl = tbl;
@@ -511,32 +500,32 @@ pre_register(struct dcht_hash_table_s * tbl,
                 } while (!dcht_hash_find(tbl, key, &dummy));
 
                 req[i].key = key;
-                if (dcht_hash_add(tbl, req[i].key, req[i].val) < 0) {
+                if (dcht_hash_add(tbl, req[i].key, req[i].val, true) < 0) {
                         fprintf(stderr, "failed to add: %d %u\n",
                                 i, req[i].key);
                         nb = tbl->current_entries;
                         break;
                 }
-                req[i].is_valid = true;
         }
 
-        table_dump(tbl);
-        verify_tbl(tbl, req, nb, __func__, "after add");
+        table_dump("After Add", tbl);
+        if (verify_tbl(tbl, req, nb, __func__, "after add"))
+                goto end;
         dcht_hash_clean(tbl);
 
         /* reverse test */
         for (int i = nb - 1; i >= 0; i--) {
                 notify.seq = i;
-                if (dcht_hash_add(tbl, req[i].key, req[i].val) < 0) {
+                if (dcht_hash_add(tbl, req[i].key, req[i].val, true) < 0) {
                         fprintf(stderr, "XXX failed to add: %d %u\n",
                                 i, req[i].key);
                         nb = tbl->current_entries;
                         break;
                 }
         }
-        table_dump(tbl);
-        verify_tbl(tbl, req, nb, __func__, "after revers add");
-
+        table_dump("After Reverse", tbl);
+        if (verify_tbl(tbl, req, nb, __func__, "after revers add"))
+                goto end;
 
         int valid = 0;
         /* search */
@@ -548,14 +537,13 @@ pre_register(struct dcht_hash_table_s * tbl,
                 if (!dcht_hash_find(tbl, req[i].key, &val) &&
                     val == req[i].val) {
                         valid += 1;
-                } else {
-                        req[i].is_valid = false;
                 }
         }
 
         fprintf(stderr, "fin searched:%u\n", tbl->current_entries);
 
-        verify_tbl(tbl, req, valid, __func__, "after search");
+        if (verify_tbl(tbl, req, valid, __func__, "after search"))
+                goto end;
 
         fprintf(stderr, "notify cnt Full:%u Moved:%u Replaced:%u Update:%u\n",
                 notify.cnt[0],
@@ -567,6 +555,7 @@ pre_register(struct dcht_hash_table_s * tbl,
         tbl->event_notify_cb = NULL;
         dcht_hash_clean(tbl);
 
+ end:
         fprintf(stderr, "done:%s retry_hash:%u\n\n", __func__, tbl->retry_hash);
 
         return req;
@@ -583,12 +572,12 @@ single_speed_test(struct dcht_hash_table_s * tbl,
         uint64_t tsc;
         int ret = -1;
 
-        fprintf(stderr, "Start Single Speed Test >>>\n");
+        fprintf(stderr, "Start Single Speed Test nb:%u >>>\n", nb);
 
         /* Add */
         tsc = rdtsc();
         for (int i = 0; i < nb; i++) {
-                if (dcht_hash_add(tbl, req[i].key, req[i].val) < 0) {
+                if (dcht_hash_add(tbl, req[i].key, req[i].val, true) < 0) {
                         fprintf(stderr, "%s:failed to add: %d %u\n",
                                 __func__, i, req[i].key);
                         goto end;
@@ -596,7 +585,7 @@ single_speed_test(struct dcht_hash_table_s * tbl,
         }
         tsc = rdtsc() - tsc;
 
-        table_dump(tbl);
+        table_dump("After Add", tbl);
         if (verify_tbl(tbl, req, nb, __func__, "after add"))
                 goto end;
         fprintf(stderr, "%s: add speed %"PRIu64"tsc/add\n\n",
@@ -615,7 +604,7 @@ single_speed_test(struct dcht_hash_table_s * tbl,
         }
         tsc = rdtsc() - tsc;
 
-        table_dump(tbl);
+        table_dump("After Search", tbl);
         if (verify_tbl(tbl, req, nb, __func__, "after search"))
                 goto end;
         fprintf(stderr, "%s: search speed %"PRIu64"tsc/search\n\n",
@@ -632,7 +621,7 @@ single_speed_test(struct dcht_hash_table_s * tbl,
         }
         tsc = rdtsc() - tsc;
 
-        table_dump(tbl);
+        table_dump("After Delete", tbl);
         if (verify_tbl(tbl, req, 0, __func__, "after delete"))
                 goto end;
         fprintf(stderr, "%s: search delete %"PRIu64"tsc/delete\n",
@@ -663,7 +652,7 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
         }
         tsc = rdtsc() - tsc;
 
-        table_dump(tbl);
+        table_dump("After Add", tbl);
         if (verify_tbl(tbl, req, nb, __func__, "after add"))
                 goto end;
         fprintf(stderr, "%s: add speed %"PRIu64"tsc/add\n\n",
@@ -677,7 +666,7 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
         }
         tsc = rdtsc() - tsc;
 
-        table_dump(tbl);
+        table_dump("After Search", tbl);
         if (verify_tbl(tbl, req, nb, __func__, "after search"))
                 goto end;
         fprintf(stderr, "%s: search speed %"PRIu64"tsc/search\n\n",
@@ -691,7 +680,7 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
         }
         tsc = rdtsc() - tsc;
 
-        table_dump(tbl);
+        table_dump("After Delete", tbl);
         if (verify_tbl(tbl, req, 0, __func__, "after delete"))
                 goto end;
         fprintf(stderr, "%s: search delete %"PRIu64"tsc/delete\n",
@@ -713,14 +702,24 @@ main(int ac,
 
         int nb = 1024 * 1024 * 32;
         struct dcht_hash_table_s * tbl = dcht_hash_table_create(nb);
+
+        fprintf(stderr, "created table:%p\n", tbl);
+
+        if (dcht_hash_utest(tbl))
+                return -1;
+
         struct req_s * req = pre_register(tbl, &nb);
 
         fprintf(stderr, "retry:%u / %d bucket:%zu\n",
                 tbl->retry_hash / 4, nb, sizeof(struct dcht_bucket_s));
 
+#if 1
         single_speed_test(tbl, req, nb);
         vector_speed_test(tbl, req, nb);
         vector_speed_test(tbl, req, tbl->nb_entries * 0.8);
+#else
+        (void) req;
+#endif
 
         return 0;
 }
