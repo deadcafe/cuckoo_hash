@@ -20,7 +20,7 @@
 
 #define ARRAYOF(_a)	(sizeof(_a)/sizeof(_a[0]))
 
-#if 0
+#if defined(ENABLE_TRACER)
 # define TRACER(fmt,...)	fprintf(stderr, "%s():%d " fmt, __func__, __LINE__, ##__VA_ARGS__)
 #else
 # define TRACER(fmt,...)
@@ -106,8 +106,253 @@ static inline void
 prefetch(const void *p)
 {
         //        asm volatile ("prefetchnta %[p]" : : [p] "m" (*(const volatile char *)p));
-        __builtin_prefetch(p, 0, 3);
+        __builtin_prefetch(p, 0, 3);	/* non temporal */
 }
+
+/*
+ * handler for each CPU Arch
+ */
+struct arch_handler_s {
+        uint32_t (*hash32)(uint32_t,uint32_t);		/* 32 bit hash generator */
+        void (*bk_init)(struct dcht_bucket_s *);	/* bucket initializer */
+        int (*find_key_bk)(const struct dcht_bucket_s *,
+                           uint32_t);			/* find key in bucket */
+        int (*find_key_bk_pair)(struct dcht_bucket_s **,
+                                uint32_t, int *);	/* find key in buckets pair */
+        unsigned (*nb_keys_bk)(const struct dcht_bucket_s *,
+                               uint32_t);		/* number of keys in a bucket */
+        int (*which_one_most_bk)(struct dcht_bucket_s **,
+                                 uint32_t);		/* which the one with more key matches in buckets pair */
+        int (*find_val_bk_pair_sync)(struct dcht_bucket_s **,
+                                     uint32_t,
+                                     uint32_t *);	/* find val in buckets pair sync */
+
+};
+
+
+
+/*****************************************************************************
+ * start Generic Arch code--->
+ *****************************************************************************/
+/*
+ * @brief FNV-1a hash
+ */
+static inline uint32_t
+fnv1a(uint32_t init,
+      uint32_t val)
+{
+        uint32_t value[2];
+        value[0] = init;
+        value[1] = val;
+
+        uint32_t hash = 0x811c9dc5;  // FNV offset basis
+        uint8_t * ptr = (uint8_t *) value;
+        uint32_t prime = 0x01000193; // FNV prime
+
+        for (unsigned i = 0; i < sizeof(value); i++) {
+                hash ^= (uint32_t) ptr[i];
+                hash *= prime;
+        }
+
+        return hash;
+}
+
+/*
+ * @brief 32bit byte swap
+ */
+static inline uint32_t
+bswap32(uint32_t x)
+{
+        x = ((x << 8) & 0xFF00FF00) | ((x >> 8) & 0x00FF00FF);
+        x = (x << 16) | (x >> 16);
+        return x;
+}
+
+/*
+ *  key find in 1 bucket (async)
+ */
+static inline int
+find_key_in_bucket_GEN(const struct dcht_bucket_s * bk,
+                       uint32_t key)
+{
+        int pos;
+
+        TRACER("bk %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk->key[0], bk->key[1], bk->key[2], bk->key[3],
+               bk->key[4], bk->key[5], bk->key[6], bk->key[7]);
+
+        for (pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
+                if (key == load_key(bk, pos))
+                        goto end;
+        }
+        pos = -1;
+ end:
+        TRACER("key:%u pos:%d\n", key, pos);
+        return pos;
+}
+
+/*
+ * key find in 2 buckets (async)
+ */
+static inline int
+find_key_in_bucket_pair_GEN(struct dcht_bucket_s ** bk_p,
+                            uint32_t key,
+                            int * pos_p)
+{
+        TRACER("K0 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk_p[0]->key[0], bk_p[0]->key[1], bk_p[0]->key[2], bk_p[0]->key[3],
+               bk_p[0]->key[4], bk_p[0]->key[5], bk_p[0]->key[6], bk_p[0]->key[7]);
+        TRACER("K1 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk_p[1]->key[0], bk_p[1]->key[1], bk_p[1]->key[2], bk_p[1]->key[3],
+               bk_p[1]->key[4], bk_p[1]->key[5], bk_p[1]->key[6], bk_p[1]->key[7]);
+
+        for (int i = 0; i < 2; i++) {
+                int pos;
+
+                if ((pos = find_key_in_bucket_GEN(bk_p[i], key)) >= 0) {
+                        *pos_p = pos;
+                        TRACER("key:%u bk_p:%d pos:%d\n", key, i, *pos_p);
+                        return i;
+                }
+        }
+        TRACER("key:%u not found\n", key);
+        return -1;
+}
+
+/*
+ *  number of key in a bucket
+ */
+static inline unsigned
+number_of_keys_in_bucket_GEN(const struct dcht_bucket_s * bk,
+                             uint32_t key)
+{
+        TRACER("bk %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk->key[0], bk->key[1], bk->key[2], bk->key[3],
+               bk->key[4], bk->key[5], bk->key[6], bk->key[7]);
+
+        unsigned nb = 0;
+        for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
+                if (load_key(bk, pos ) == key)
+                        nb += 1;
+        }
+
+        TRACER("key:%u nb:%u\n", key, nb);
+        return nb;
+}
+
+/*
+ * Return the one with more key matches (async)
+ */
+static inline int
+which_one_most_GEN(struct dcht_bucket_s ** bk_p,
+                   uint32_t key)
+{
+        int n[2], ret;
+
+        TRACER("K0 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk_p[0]->key[0], bk_p[0]->key[1], bk_p[0]->key[2], bk_p[0]->key[3],
+               bk_p[0]->key[4], bk_p[0]->key[5], bk_p[0]->key[6], bk_p[0]->key[7]);
+        TRACER("K1 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk_p[1]->key[0], bk_p[1]->key[1], bk_p[1]->key[2], bk_p[1]->key[3],
+               bk_p[1]->key[4], bk_p[1]->key[5], bk_p[1]->key[6], bk_p[1]->key[7]);
+
+        n[0] = 0;
+        n[1] = 0;
+
+        for (int i = 0; i < 2; i++) {
+                for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
+                        if (load_key(bk_p[i], pos ) == key)
+                                n[i] += 1;
+                }
+        }
+
+        if (n[0] >= n[1])
+                ret = 0;
+        else
+                ret = 1;
+
+        if (!n[ret])
+                ret = -1;
+
+        TRACER("key:%u ret:%d n0:%d n1:%d\n", key, ret, n[0], n[1]);
+        return ret;
+}
+
+/*
+ * find, for reader (sync)
+ */
+static inline int
+find_key_val_in_bucket_pair_sync_GEN(struct dcht_bucket_s ** bk_p,
+                                     uint32_t key,
+                                     uint32_t * val_p)
+{
+        int i;
+        int loop = 5;
+
+        TRACER("K0 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk_p[0]->key[0], bk_p[0]->key[1], bk_p[0]->key[2], bk_p[0]->key[3],
+               bk_p[0]->key[4], bk_p[0]->key[5], bk_p[0]->key[6], bk_p[0]->key[7]);
+        TRACER("K1 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+               bk_p[1]->key[0], bk_p[1]->key[1], bk_p[1]->key[2], bk_p[1]->key[3],
+               bk_p[1]->key[4], bk_p[1]->key[5], bk_p[1]->key[6], bk_p[1]->key[7]);
+
+ retry:
+        assert(--loop > 0);
+
+        for (i = 0; i < 2; i++) {
+                for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
+                        if (load_key(bk_p[i], pos) == key) {
+                                if (load_val(bk_p[i], pos, key, val_p)) {
+                                        goto retry;
+                                } else {
+                                        TRACER("key:%u bk_p:%d pos:%d val:%u\n",
+                                               key, i, pos, *val_p);
+                                        return i;
+                                }
+                        }
+                }
+        }
+        TRACER("not found key:%u\n", key);
+        return -1;
+}
+
+/**
+ * @brief initialize bucket (unused)
+ *
+ * @param bk: bucket
+ * @return void
+ */
+static inline void
+bucket_init_GEN(struct dcht_bucket_s * bk)
+{
+        for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++)
+                store_key(bk, pos, DCHT_UNUSED_KEY);
+}
+
+static const struct arch_handler_s generic_handlers = {
+        .hash32 = fnv1a,
+        .bk_init = bucket_init_GEN,
+        .find_key_bk = find_key_in_bucket_GEN,
+        .find_key_bk_pair = find_key_in_bucket_pair_GEN,
+        .nb_keys_bk = number_of_keys_in_bucket_GEN,
+        .which_one_most_bk = which_one_most_GEN,
+        .find_val_bk_pair_sync = find_key_val_in_bucket_pair_sync_GEN,
+};
+
+/*****************************************************************************
+ * <---end Generic Arch code
+ *****************************************************************************/
+
+static const struct arch_handler_s * arch_handler = &generic_handlers;
+
+#define BSWAP(_v)					__builtin_bswap32((_v))
+#define HASH(_i,_v)					arch_handler->hash32((_i),(_v))
+#define FIND_KEY_IN_BUCKET(_bk,_key)			arch_handler->find_key_bk((_bk),(_key))
+#define FIND_KEY_IN_BUCKET_PAIR(_bk_p,_key,_pos_p)	arch_handler->find_key_bk_pair((_bk_p),(_key),(_pos_p))
+#define	NB_KEYS_IN_BUCKET(_bk,_key)			arch_handler->nb_keys_bk((_bk),(_key))
+#define WHICH_ONE_MOST(_bk_p,_key)			arch_handler->which_one_most_bk((_bk_p),(_key))
+#define	FIND_VAL_IN_BUCKET_PAIR_SYNC(_bk_p,_key,_val_p)	arch_handler->find_val_bk_pair_sync((_bk_p),(_key),(_val_p))
+#define	BUCKET_INIT(_bk)				arch_handler->bk_init((_bk))
 
 
 #if defined(__x86_64__)
@@ -115,39 +360,7 @@ prefetch(const void *p)
  * x86_64 depened code start--->
  *****************************************************************************/
 #include <immintrin.h>
-
-/*
- * @brief read barrier
- */
-static inline uint32_t
-hash32(uint32_t init,
-         uint32_t val)
-{
-        return _mm_crc32_u32(init, val);
-}
-
-/*
- * @brief 32bit byte swap
- */
-static inline uint32_t
-bswap32(uint32_t val)
-{
-        return __builtin_bswap32(val);
-}
-
-
-/**
- * @brif population count
- *
- * @param value
- * @return return unsigned
- */
-static inline unsigned
-popcnt(uint32_t v)
-{
-        return __builtin_popcount(v);
-}
-
+#include <cpuid.h>
 
 /******************************************************************************
  * AVX2 code
@@ -360,246 +573,73 @@ bucket_init_AVX2(struct dcht_bucket_s * bk)
         __sync_synchronize();
 }
 
+/**
+ * @brief crc32c calc
+ *
+ * @param initial value
+ * @param target value
+ * @return crc32c
+ */
+static inline uint32_t
+crc32c32(uint32_t init,
+         uint32_t val)
+{
+        return _mm_crc32_u32(init, val);
+}
+
+static const struct arch_handler_s x86_avx2_handlers = {
+        .hash32                = crc32c32,
+        .bk_init               = bucket_init_AVX2,
+        .find_key_bk           = find_key_in_bucket_AVX2,
+        .find_key_bk_pair      = find_key_in_bucket_pair_AVX2,
+        .nb_keys_bk            = number_of_keys_in_bucket_AVX2,
+        .which_one_most_bk     = which_one_most_AVX2,
+        .find_val_bk_pair_sync = find_key_val_in_bucket_pair_sync_AVX2,
+};
+
+/*
+ * check cpuid AVX2,BMI,SSE4_2(crc32c)
+ */
+const struct arch_handler_s *
+ __attribute__((weak)) x86_handler_get(void)
+{
+        const struct arch_handler_s * handler = arch_handler;
+
+#ifndef	DISABLE_AVX2_DRIVER
+        uint32_t eax = 0, ebx, ecx, edx;
+
+        // Get the highest function parameter.
+        __get_cpuid(0, &eax, &ebx, &ecx, &edx);
+
+        // Check if the function parameter for extended features is available.
+        if (eax >= 7) {
+                __cpuid_count(1, 0, eax, ebx, ecx, edx);
+                if (!(ecx & bit_SSE4_2))
+                        goto end;
+
+                __cpuid_count(7, 0, eax, ebx, ecx, edx);
+                if (!(ebx & bit_AVX2))
+                        goto end;
+                if (!(ebx & bit_BMI))
+                        goto end;
+
+                /* All Ok */
+                TRACER("use X86_64 AVX2 cuckoo hash driver\n");
+                handler = &x86_avx2_handlers;
+        } else {
+ end:
+                TRACER("use generic cuckoo hash driver\n");
+        }
+#else	/* !DISABLE_AVX2_DRIVER */
+        (void) &x86_avx2_handlers;
+#endif	/* DISABLE_AVX2_DRIVER */
+        return handler;
+}
+
 /*****************************************************************************
  * <---end x86 depened code
  *****************************************************************************/
-
-#define FIND_KEY_IN_BUCKET(_bk,_key)			find_key_in_bucket_AVX2((_bk),(_key))
-#define FIND_KEY_IN_BUCKET_PAIR(_bk_p,_key,_pos_p)	find_key_in_bucket_pair_AVX2((_bk_p),(_key),(_pos_p))
-#define	NB_KEYS_IN_BUCKET(_bk, _key)			number_of_keys_in_bucket_AVX2((_bk),(_key))
-#define WHICH_ONE_MOST(_bk_p, _key)			which_one_most_AVX2((_bk_p),(_key))
-#define	FIND_VAL_IN_BUCKET_PAIR_SYNC(_bk_p,_key,_val_p)	find_key_val_in_bucket_pair_sync_AVX2((_bk_p),(_key),(_val_p))
-#define	BUCKET_INIT(_bk)				bucket_init_AVX2((_bk))
-
-#else	/* !__x86_64__ */
-
-/*****************************************************************************
- * start Generic Arch code--->
- *****************************************************************************/
-
-/*
- * @brief FNV-1a hash
- */
-static inline uint32_t
-hash32(uint32_t init,
-       uint32_t val)
-{
-        uint32_t value[2];
-        value[0] = init;
-        value[1] = val;
-
-        uint32_t hash = 0x811c9dc5;  // FNV offset basis
-        uint8_t * ptr = (uint8_t *) value;
-        uint32_t prime = 0x01000193; // FNV prime
-
-        for (unsigned i = 0; i < sizeof(value); i++) {
-                hash ^= (uint32_t) ptr[i];
-                hash *= prime;
-        }
-
-        return hash;
-}
-
-/*
- * @brief 32bit byte swap
- */
-static inline uint32_t
-bswap32(uint32_t x)
-{
-        x = ((x << 8) & 0xFF00FF00) | ((x >> 8) & 0x00FF00FF);
-        x = (x << 16) | (x >> 16);
-        return x;
-}
-
-/**
- * @brif population count
- *
- * @param value
- * @return return unsigned
- */
-static inline unsigned
-popcnt(uint32_t v)
-{
-        unsigned nb = 0;
-        for (unsigned i = 0; v; i++, v >>= 1) {
-                if (v & 1)
-                        nb++;
-        }
-        return nb;
-}
-
-/*
- *  key find in 1 bucket (async)
- */
-static inline int
-find_key_in_bucket_GEN(const struct dcht_bucket_s * bk,
-                       uint32_t key)
-{
-        int pos;
-
-        TRACER("bk %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk->key[0], bk->key[1], bk->key[2], bk->key[3],
-               bk->key[4], bk->key[5], bk->key[6], bk->key[7]);
-
-        for (pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
-                if (key == load_key(bk, pos))
-                        goto end;
-        }
-        pos = -1;
- end:
-        TRACER("key:%u pos:%d\n", key, pos);
-        return pos;
-}
-
-/*
- * key find in 2 buckets (async)
- */
-static inline int
-find_key_in_bucket_pair_GEN(struct dcht_bucket_s ** bk_p,
-                            uint32_t key,
-                            int * pos_p)
-{
-        TRACER("K0 %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk_p[0]->key[0], bk_p[0]->key[1], bk_p[0]->key[2], bk_p[0]->key[3],
-               bk_p[0]->key[4], bk_p[0]->key[5], bk_p[0]->key[6], bk_p[0]->key[7]);
-        TRACER("K1 %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk_p[1]->key[0], bk_p[1]->key[1], bk_p[1]->key[2], bk_p[1]->key[3],
-               bk_p[1]->key[4], bk_p[1]->key[5], bk_p[1]->key[6], bk_p[1]->key[7]);
-
-        for (int i = 0; i < 2; i++) {
-                int pos;
-
-                if ((pos = find_key_in_bucket_GEN(bk_p[i], key)) >= 0) {
-                        *pos_p = pos;
-                        TRACER("key:%u bk_p:%d pos:%d\n", key, i, *pos_p);
-                        return i;
-                }
-        }
-        TRACER("key:%u not found\n", key);
-        return -1;
-}
-
-/*
- *  number of key in a bucket
- */
-static inline unsigned
-number_of_keys_in_bucket_GEN(const struct dcht_bucket_s * bk,
-                             uint32_t key)
-{
-        TRACER("bk %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk->key[0], bk->key[1], bk->key[2], bk->key[3],
-               bk->key[4], bk->key[5], bk->key[6], bk->key[7]);
-
-        unsigned nb = 0;
-        for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
-                if (load_key(bk, pos ) == key)
-                        nb += 1;
-        }
-
-        TRACER("key:%u nb:%u\n", key, nb);
-        return nb;
-}
-
-/*
- * Return the one with more key matches (async)
- */
-static inline int
-which_one_most_GEN(struct dcht_bucket_s ** bk_p,
-                   uint32_t key)
-{
-        int n[2], ret;
-
-        TRACER("K0 %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk_p[0]->key[0], bk_p[0]->key[1], bk_p[0]->key[2], bk_p[0]->key[3],
-               bk_p[0]->key[4], bk_p[0]->key[5], bk_p[0]->key[6], bk_p[0]->key[7]);
-        TRACER("K1 %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk_p[1]->key[0], bk_p[1]->key[1], bk_p[1]->key[2], bk_p[1]->key[3],
-               bk_p[1]->key[4], bk_p[1]->key[5], bk_p[1]->key[6], bk_p[1]->key[7]);
-
-        n[0] = 0;
-        n[1] = 0;
-
-        for (int i = 0; i < 2; i++) {
-                for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
-                        if (load_key(bk_p[i], pos ) == key)
-                                n[i] += 1;
-                }
-        }
-
-        if (n[0] >= n[1])
-                ret = 0;
-        else
-                ret = 1;
-
-        if (!n[ret])
-                ret = -1;
-
-        TRACER("key:%u ret:%d n0:%d n1:%d\n", key, ret, n[0], n[1]);
-        return ret;
-}
-
-/*
- * find, for reader (sync)
- */
-static inline int
-find_key_val_in_bucket_pair_sync_GEN(struct dcht_bucket_s ** bk_p,
-                                     uint32_t key,
-                                     uint32_t * val_p)
-{
-        int i;
-        int loop = 5;
-
-        TRACER("K0 %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk_p[0]->key[0], bk_p[0]->key[1], bk_p[0]->key[2], bk_p[0]->key[3],
-               bk_p[0]->key[4], bk_p[0]->key[5], bk_p[0]->key[6], bk_p[0]->key[7]);
-        TRACER("K1 %08x %08x %08x %08x %08x %08x %08x %08x\n",
-               bk_p[1]->key[0], bk_p[1]->key[1], bk_p[1]->key[2], bk_p[1]->key[3],
-               bk_p[1]->key[4], bk_p[1]->key[5], bk_p[1]->key[6], bk_p[1]->key[7]);
-
- retry:
-        assert(--loop > 0);
-
-        for (i = 0; i < 2; i++) {
-                for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++) {
-                        if (load_key(bk_p[i], pos) == key) {
-                                if (load_val(bk_p[i], pos, key, val_p)) {
-                                        goto retry;
-                                } else {
-                                        TRACER("key:%u bk_p:%d pos:%d val:%u\n",
-                                               key, i, pos, *val_p);
-                                        return i;
-                                }
-                        }
-                }
-        }
-        TRACER("not found key:%u\n", key);
-        return -1;
-}
-
-/**
- * @brief initialize bucket (unused)
- *
- * @param bk: bucket
- * @return void
- */
-static inline void
-bucket_init_GEN(struct dcht_bucket_s * bk)
-{
-        for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++)
-                store_key(bk, pos, DCHT_UNUSED_KEY);
-}
-
-/*****************************************************************************
- * <---endstart Generic Arch code
- *****************************************************************************/
-#define FIND_KEY_IN_BUCKET(_bk,_key)			find_key_in_bucket_GEN((_bk),(_key))
-#define FIND_KEY_IN_BUCKET_PAIR(_bk_p,_key,_pos_p)	find_key_in_bucket_pair_GEN((_bk_p),(_key),(_pos_p))
-#define	NB_KEYS_IN_BUCKET(_bk, _key)			number_of_keys_in_bucket_GEN((_bk),(_key))
-#define WHICH_ONE_MOST(_bk_p, _key)			which_one_most_GEN((_bk_p),(_key))
-#define	FIND_VAL_IN_BUCKET_PAIR_SYNC(_bk_p,_key,_val_p)	find_key_val_in_bucket_pair_sync_GEN((_bk_p),(_key),(_val_p))
-#define	BUCKET_INIT(_bk)				bucket_init_GEN((_bk))
-
-#endif	/* !__x86_64__ */
+#endif	/* __x86_64__ */
 
 
 /**
@@ -705,7 +745,6 @@ find_key_val(struct dcht_bucket_s * bk,
         return pos;
 }
 
-
 /**
  * @brief Set all bits below MSB
  *
@@ -755,21 +794,21 @@ buckets_fetch(struct dcht_hash_table_s *tbl,
         unsigned pos[2];
         int retry = 10;
 
-        x = hash32(0xdeadbeef, key);
-        x = hash32(x, bswap32(key));
+        x = HASH(0xdeadbeef, key);
+        x = HASH(x, BSWAP(key));
         pos[0] = x & msk;
         while (!pos[0]) {
-                x = hash32(x, key);
+                x = HASH(x, key);
                 pos[0] = x & msk;
 
                 assert(--retry > 0);
         }
         retry = 10;
 
-        y = bswap32(key ^ x);
+        y = BSWAP(key ^ x);
         pos[1] = y & msk;
         while (pos[0] == pos[1] || !pos[1]) {
-                y = hash32(y, ~bswap32(key));
+                y = HASH(y, ~BSWAP(key));
                 pos[1] = y & msk;
 
                 assert(--retry > 0);
@@ -878,6 +917,9 @@ dcht_hash_table_init(struct dcht_hash_table_s * tbl,
 {
         unsigned nb_buckets = 0;
         int ret = -1;
+
+        if (arch_handler == &generic_handlers && x86_handler_get)
+                arch_handler = x86_handler_get();
 
         if (tbl) {
                 if ((uintptr_t) tbl % DCHT_CACHELINE_SIZE != 0) {

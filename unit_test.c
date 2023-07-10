@@ -700,7 +700,10 @@ main(int ac,
         (void) ac;
         (void) av;
 
-        int nb = 1024 * 1024 * 32;
+#ifndef TARGET_NB
+#define TARGET_NB	1024 * 1024 * 1
+#endif
+        int nb = TARGET_NB;
         struct dcht_hash_table_s * tbl = dcht_hash_table_create(nb);
 
         fprintf(stderr, "created table:%p\n", tbl);
