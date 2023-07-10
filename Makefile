@@ -1,6 +1,8 @@
+#
+# Copyright (c) 2023 deadcafe.beef@gmail.com
+#
 
 CURDIR:=$(PWD)
-
 
 CFLAGS  = -g -O3 -mavx2 -mbmi -msse4.2 -Werror -Wextra -Wall -Wstrict-aliasing -std=gnu11 -pipe
 CPPFLAGS = -c -I$(CURDIR) -D_GNU_SOURCE

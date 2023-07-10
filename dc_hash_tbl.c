@@ -1,10 +1,11 @@
 /*
- * spec:
+ * Copyright (c) 2023 deadcafe.beef@gmail.com
+ *
+ * cuckoo hash table
  * (1) single writer thread, multi reader thread.
  * (2) lock free
- * (3) x86_64 only, must be ready _mm_sfence(), _mm_lfence(), _mm_crc32_u32()
- * (4) support add, del, search API
- *
+ * (3) support add, del, search API
+ * (4) Zero cannot be used for Key
  */
 
 #include <inttypes.h>
