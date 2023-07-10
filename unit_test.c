@@ -472,7 +472,6 @@ pre_register(struct dcht_hash_table_s * tbl,
         int nb = tbl->nb_entries;
         struct req_s * req = calloc(nb, sizeof(*req));
         struct notify_s notify;
-        char rand_state[256];
 
         table_dump("Start Pre-Register", tbl);
 
@@ -484,8 +483,6 @@ pre_register(struct dcht_hash_table_s * tbl,
 
         tbl->event_notify_cb = notify_cb;
         tbl->arg = &notify;
-
-        initstate(rdtsc(), rand_state, sizeof(rand_state));
 
         /* add */
         for (int i = 0; i < nb; i++) {
@@ -639,7 +636,7 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
                   struct req_s * req,
                   int nb)
 {
-       uint64_t tsc;
+        uint64_t tsc;
         int ret = -1;
 
         fprintf(stderr, "Start Vector Speed Test >>>\n");
@@ -693,12 +690,69 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
         return ret;
 }
 
+static inline int
+add_del_test(struct dcht_hash_table_s * tbl,
+             struct req_s * req,
+             int nb)
+{
+        int ret = -1;
+
+        fprintf(stderr, "Start Add-Delete Test >>>\n\n");
+
+        /* first add */
+        for (int i = 0; i < nb; i++) {
+                if (dcht_hash_add(tbl, req[i].key, req[i].val, true) < 0) {
+                        fprintf(stderr, "failed to add: %d %u\n",
+                                i, req[i].key);
+                        goto end;
+                }
+        }
+
+        int loop_cnt = 100;
+        while (loop_cnt--) {
+                fprintf(stderr, "loop:%d\n", loop_cnt);
+
+                for (int i = 0; i < nb; i++) {
+                        if (dcht_hash_del(tbl, req[i].key)) {
+                                fprintf(stderr, "failed to delete: %d %u\n",
+                                        i, req[i].key);
+                                goto end;
+                        }
+
+                        uint32_t dummy;
+                        uint32_t key;
+                        do {
+                                key = random();
+                        } while (!dcht_hash_find(tbl, key, &dummy));
+
+                        if (dcht_hash_add(tbl, key, req[i].val, true) < 0) {
+                                fprintf(stderr, "failed to add: %d %u\n", i, key);
+                                break;
+                        }
+                        req[i].key = key;
+                }
+        }
+
+        table_dump("After Add-Delete loop", tbl);
+        if (verify_tbl(tbl, req, nb, __func__, "after add-delete loop"))
+                goto end;
+
+        ret = 0;
+ end:
+        fprintf(stderr, "<<< End Add-Delete Test\n\n");
+        dcht_hash_clean(tbl);
+        return ret;
+}
+
 int
 main(int ac,
      char **av)
 {
         (void) ac;
         (void) av;
+        char rand_state[256];
+
+        initstate(rdtsc(), rand_state, sizeof(rand_state));
 
 #ifndef TARGET_NB
 #define TARGET_NB	1024 * 1024 * 1
@@ -720,6 +774,7 @@ main(int ac,
         single_speed_test(tbl, req, nb);
         vector_speed_test(tbl, req, nb);
         vector_speed_test(tbl, req, tbl->nb_entries * 0.8);
+        add_del_test(tbl, req, tbl->nb_entries * 0.8);
 #else
         (void) req;
 #endif

@@ -5,7 +5,7 @@
  * (1) single writer thread, multi reader thread.
  * (2) lock free
  * (3) support add, del, search API
- * (4) Zero cannot be used for Key
+ * (4) Zero cannot be used for Key (range 1~0xffffffff)
  */
 
 #ifndef _DC_HASH_TBL_H_

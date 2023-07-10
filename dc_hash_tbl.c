@@ -882,15 +882,27 @@ cuckoo_replace(struct dcht_hash_table_s * tbl,
         return -1;
 }
 
+/*
+ * max buckets + 1
+ */
+static inline unsigned
+nb_bcuckets(unsigned nb_entries)
+{
+        if (nb_entries < DCHT_NB_ENTRIES_MIN)
+                nb_entries = DCHT_NB_ENTRIES_MIN;
+        unsigned nb_buckets = align64pow2(nb_entries * 1.27) / DCHT_BUCKET_ENTRY_SZ;	/* full rate 80% */
+
+        fprintf(stderr, "nb buckets:%u\n", nb_buckets);
+        return nb_buckets;
+}
+
 /************************************************************************
  * supported hash table API
  ************************************************************************/
 size_t
 dcht_hash_table_size(unsigned max_entries)
 {
-        if (max_entries < DCHT_NB_ENTRIES_MIN)
-                max_entries = DCHT_NB_ENTRIES_MIN;
-        unsigned nb_buckets = align64pow2(max_entries) >> 2;
+        unsigned nb_buckets = nb_bcuckets(max_entries);
         size_t size = sizeof(struct dcht_bucket_s) * nb_buckets;
 
         assert(sizeof(struct dcht_hash_table_s) ==  sizeof(struct dcht_bucket_s));
@@ -933,9 +945,7 @@ dcht_hash_table_init(struct dcht_hash_table_s * tbl,
                         TRACER("Too small table size:%zu\n", size);
                         goto end;
                 }
-                if (max_entries < DCHT_NB_ENTRIES_MIN)
-                        max_entries = DCHT_NB_ENTRIES_MIN;
-                nb_buckets = align64pow2(max_entries) >> 2;
+                nb_buckets = nb_bcuckets(max_entries);
 
                 memset(tbl, 0, sizeof(*tbl));
 
