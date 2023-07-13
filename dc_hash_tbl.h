@@ -13,6 +13,8 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <errno.h>
 
 /*
  * configuration some parameters
@@ -26,7 +28,7 @@
 #define DCHT_BUCKET_FULL		((1u << DCHT_BUCKET_ENTRY_SZ) - 1)
 #define DCHT_NB_ENTRIES_MIN		64
 #define DCHT_FOLLOW_DEPTH_DEFAULT	3
-#define	DCHT_UNUSED_KEY			0
+#define	DCHT_SENTINEL_KEY		0
 
 
 /*
@@ -224,15 +226,33 @@ extern int dcht_hash_del(struct dcht_hash_table_s * tbl,
                          uint32_t key);
 
 /**
- * @brief walk in hash table entries
+ * @brief walk bucket in hash table entries
  *
  * @param tbl: hash table pointer
  * @param bucket_cb: active bucket callback function
- * @param arg: any argument to bucket_cb
- * @return Return the return of bucket_cb
+ * @param arg: any argument to func_cb
+ * @return Return the return of func_cb
+ */
+extern int dcht_hash_bk_walk(struct dcht_hash_table_s * tbl,
+                             int (*func_cb)(struct dcht_hash_table_s *,
+                                            const struct dcht_bucket_s *,
+                                            void *),
+                             void * arg);
+
+/**
+ * @brief walk in hash table entries
+ *
+ * @param tbl: hash table pointer
+ * @param key: entried KEY
+ * @param val: entried VAL
+ * @param arg: any argument
+ * @return Return the return of func_cb
  */
 extern int dcht_hash_walk(struct dcht_hash_table_s * tbl,
-                          int (*bucket_cb)(void *, const struct dcht_bucket_s *),
+                          int (*func_cb)(struct dcht_hash_table_s *,
+                                         uint32_t key,
+                                         uint32_t val,
+                                         void *),
                           void * arg);
 
 /**
@@ -247,5 +267,7 @@ extern int dcht_hash_utest(struct dcht_hash_table_s * tbl);
  * return number of used keys in bucket
  */
 extern unsigned dcht_hash_bucket_keys_nb(const struct dcht_bucket_s * bk);
+
+extern int dcht_hash_verify(struct dcht_hash_table_s * tbl);
 
 #endif	/* !_DC_HASH_TBL_H_ */

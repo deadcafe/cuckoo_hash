@@ -67,7 +67,7 @@ bucket_dump(struct dcht_hash_table_s * tbl,
         fprintf(stderr, "  bk:%p id:%u\n", bk, bucket_id(tbl, bk));
 
         for (unsigned pos = 0; pos < DCHT_BUCKET_ENTRY_SZ; pos++) {
-                if (bk->key[pos] == DCHT_UNUSED_KEY)
+                if (bk->key[pos] == DCHT_SENTINEL_KEY)
                         continue;
 
                 struct dcht_bucket_s * bk_p[2];
@@ -171,9 +171,11 @@ notify_cb(void *arg,
 
                         if (bk->key[pos] != key ||
                             bk->val[pos] != val) {
-                                fprintf(stderr, "Bad key:%u val:%u\n", \
+                                fprintf(stderr, "Bad key:%u val:%u pos:%d\n", \
                                         bk->key[pos],
-                                        bk->val[pos]);
+                                        bk->val[pos],
+                                        pos);
+                                abort();
                         }
 #if 0
                         table_dump(notify->tbl);
@@ -194,15 +196,17 @@ struct walk_s {
 };
 
 static inline int
-verify_cb(void * arg,
-          const struct dcht_bucket_s * bk)
+verify_cb(struct dcht_hash_table_s * tbl,
+          const struct dcht_bucket_s * bk,
+          void * arg)
 {
         struct walk_s * wk = arg;
         unsigned nb_keys = dcht_hash_bucket_keys_nb(bk);
         unsigned nb = 0;
+        (void) tbl;
 
         for (unsigned i = 0; i < DCHT_BUCKET_ENTRY_SZ; i++) {
-                if (bk->key[i] == DCHT_UNUSED_KEY)
+                if (bk->key[i] == DCHT_SENTINEL_KEY)
                         continue;
                 nb += 1;
 
@@ -242,7 +246,7 @@ verify_tbl(struct dcht_hash_table_s * tbl,
         walk.tbl = tbl;
         walk.req = req;
 
-        ret = dcht_hash_walk(tbl, verify_cb, &walk);
+        ret = dcht_hash_bk_walk(tbl, verify_cb, &walk);
         if (ret) {
                 fprintf(stderr, "failed to Walk:%u\n", walk.nb);
         } else {
@@ -506,8 +510,10 @@ pre_register(struct dcht_hash_table_s * tbl,
         }
 
         table_dump("After Add", tbl);
-        if (verify_tbl(tbl, req, nb, __func__, "after add"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Add.\n");
                 goto end;
+        }
         dcht_hash_clean(tbl);
 
         /* reverse test */
@@ -521,8 +527,10 @@ pre_register(struct dcht_hash_table_s * tbl,
                 }
         }
         table_dump("After Reverse", tbl);
-        if (verify_tbl(tbl, req, nb, __func__, "after revers add"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Reverse Add.\n");
                 goto end;
+        }
 
         int valid = 0;
         /* search */
@@ -539,8 +547,10 @@ pre_register(struct dcht_hash_table_s * tbl,
 
         fprintf(stderr, "fin searched:%u\n", tbl->current_entries);
 
-        if (verify_tbl(tbl, req, valid, __func__, "after search"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Search.\n");
                 goto end;
+        }
 
         fprintf(stderr, "notify cnt Full:%u Moved:%u Replaced:%u Update:%u\n",
                 notify.cnt[0],
@@ -552,9 +562,12 @@ pre_register(struct dcht_hash_table_s * tbl,
         tbl->event_notify_cb = NULL;
         dcht_hash_clean(tbl);
 
- end:
         fprintf(stderr, "done:%s retry_hash:%u\n\n", __func__, tbl->retry_hash);
-
+        if (0) {
+ end:
+                free(req);
+                req = NULL;
+        }
         return req;
 }
 
@@ -583,8 +596,10 @@ single_speed_test(struct dcht_hash_table_s * tbl,
         tsc = rdtsc() - tsc;
 
         table_dump("After Add", tbl);
-        if (verify_tbl(tbl, req, nb, __func__, "after add"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Add.\n");
                 goto end;
+        }
         fprintf(stderr, "%s: add speed %"PRIu64"tsc/add\n\n",
                 __func__, tsc / nb);
 
@@ -602,8 +617,10 @@ single_speed_test(struct dcht_hash_table_s * tbl,
         tsc = rdtsc() - tsc;
 
         table_dump("After Search", tbl);
-        if (verify_tbl(tbl, req, nb, __func__, "after search"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Search.\n");
                 goto end;
+}
         fprintf(stderr, "%s: search speed %"PRIu64"tsc/search\n\n",
                 __func__, tsc / nb);
 
@@ -619,8 +636,10 @@ single_speed_test(struct dcht_hash_table_s * tbl,
         tsc = rdtsc() - tsc;
 
         table_dump("After Delete", tbl);
-        if (verify_tbl(tbl, req, 0, __func__, "after delete"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Delete.\n");
                 goto end;
+        }
         fprintf(stderr, "%s: search delete %"PRIu64"tsc/delete\n",
                 __func__, tsc / nb);
 
@@ -650,8 +669,10 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
         tsc = rdtsc() - tsc;
 
         table_dump("After Add", tbl);
-        if (verify_tbl(tbl, req, nb, __func__, "after add"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Add.\n");
                 goto end;
+        }
         fprintf(stderr, "%s: add speed %"PRIu64"tsc/add\n\n",
                 __func__, tsc / nb);
 
@@ -664,8 +685,10 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
         tsc = rdtsc() - tsc;
 
         table_dump("After Search", tbl);
-        if (verify_tbl(tbl, req, nb, __func__, "after search"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Search.\n");
                 goto end;
+        }
         fprintf(stderr, "%s: search speed %"PRIu64"tsc/search\n\n",
                 __func__, tsc / nb);
 
@@ -678,8 +701,10 @@ vector_speed_test(struct dcht_hash_table_s * tbl,
         tsc = rdtsc() - tsc;
 
         table_dump("After Delete", tbl);
-        if (verify_tbl(tbl, req, 0, __func__, "after delete"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Delete\n");
                 goto end;
+        }
         fprintf(stderr, "%s: search delete %"PRIu64"tsc/delete\n",
                 __func__, tsc / nb);
 
@@ -734,9 +759,10 @@ add_del_test(struct dcht_hash_table_s * tbl,
         }
 
         table_dump("After Add-Delete loop", tbl);
-        if (verify_tbl(tbl, req, nb, __func__, "after add-delete loop"))
+        if (dcht_hash_verify(tbl)) {
+                fprintf(stderr, "failed to verify at After Add-Delete loop\n");
                 goto end;
-
+        }
         ret = 0;
  end:
         fprintf(stderr, "<<< End Add-Delete Test\n\n");
@@ -754,10 +780,10 @@ main(int ac,
 
         initstate(rdtsc(), rand_state, sizeof(rand_state));
 
-#ifndef TARGET_NB
-#define TARGET_NB	1024 * 1024 * 1
+#ifndef HASH_TARGET_NB
+#define HASH_TARGET_NB	1024 * 1024 * 1
 #endif
-        int nb = TARGET_NB;
+        int nb = HASH_TARGET_NB;
         struct dcht_hash_table_s * tbl = dcht_hash_table_create(nb);
 
         fprintf(stderr, "created table:%p\n", tbl);
@@ -770,14 +796,11 @@ main(int ac,
         fprintf(stderr, "retry:%u / %d bucket:%zu\n",
                 tbl->retry_hash / 4, nb, sizeof(struct dcht_bucket_s));
 
-#if 1
-        single_speed_test(tbl, req, nb);
-        vector_speed_test(tbl, req, nb);
-        vector_speed_test(tbl, req, tbl->nb_entries * 0.8);
-        add_del_test(tbl, req, tbl->nb_entries * 0.8);
-#else
-        (void) req;
-#endif
-
+        if (req) {
+                single_speed_test(tbl, req, nb);
+                vector_speed_test(tbl, req, nb);
+                vector_speed_test(tbl, req, tbl->nb_entries * 0.8);
+                add_del_test(tbl, req, tbl->nb_entries * 0.8);
+        }
         return 0;
 }
