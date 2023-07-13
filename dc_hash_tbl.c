@@ -42,17 +42,17 @@
  * Table Reader|writer
  ******************************************************************/
 static inline void
-store_key(struct dcht_bucket_s * bk,
-          int pos,
-          uint32_t key)
+store_key (struct dcht_bucket_s * bk,
+           int pos,
+           uint32_t key)
 {
         atomic_store_explicit(&bk->key[pos], key, memory_order_release);
 }
 
 static inline void
-store_val(struct dcht_bucket_s * bk,
-          int pos,
-          uint32_t val)
+store_val (struct dcht_bucket_s * bk,
+           int pos,
+           uint32_t val)
 {
         atomic_store_explicit(&bk->val[pos], val, memory_order_relaxed);
 }
@@ -61,10 +61,10 @@ store_val(struct dcht_bucket_s * bk,
  * for writer thread
  */
 static inline void
-store_key_val(struct dcht_bucket_s * bk,
-              int pos,
-              uint32_t key,
-              uint32_t val)
+store_key_val (struct dcht_bucket_s * bk,
+               int pos,
+               uint32_t key,
+               uint32_t val)
 {
         /* write the value and then the key */
         atomic_store_explicit(&bk->val[pos], val, memory_order_relaxed);
@@ -72,18 +72,18 @@ store_key_val(struct dcht_bucket_s * bk,
 }
 
 static inline uint32_t
-load_key(const struct dcht_bucket_s * bk,
-         int pos)
+load_key (const struct dcht_bucket_s * bk,
+          int pos)
 {
         uint32_t key = atomic_load_explicit(&bk->key[pos], memory_order_acquire);
         return key;
 }
 
 static inline int
-load_val(const struct dcht_bucket_s * bk,
-         int pos,
-         uint32_t key,
-         uint32_t * val_p)
+load_val (const struct dcht_bucket_s * bk,
+          int pos,
+          uint32_t key,
+          uint32_t * val_p)
 {
         uint32_t val = atomic_load_explicit(&bk->val[pos], memory_order_relaxed);
         uint32_t cur = load_key(bk, pos);
@@ -104,7 +104,7 @@ load_val(const struct dcht_bucket_s * bk,
  * @return void
  */
 static inline void
-prefetch(const void *p)
+prefetch (const void *p)
 {
         //        asm volatile ("prefetchnta %[p]" : : [p] "m" (*(const volatile char *)p));
         __builtin_prefetch(p, 0, 3);	/* non temporal */
@@ -137,8 +137,8 @@ struct arch_handler_s {
  * @brief FNV-1a hash
  */
 static inline uint32_t
-fnv1a(uint32_t init,
-      uint32_t val)
+fnv1a (uint32_t init,
+       uint32_t val)
 {
         uint32_t value[2];
         value[0] = init;
@@ -160,7 +160,7 @@ fnv1a(uint32_t init,
  * @brief 32bit byte swap
  */
 static inline uint32_t
-bswap32(uint32_t x)
+bswap32 (uint32_t x)
 {
         x = ((x << 8) & 0xFF00FF00) | ((x >> 8) & 0x00FF00FF);
         x = (x << 16) | (x >> 16);
@@ -171,8 +171,8 @@ bswap32(uint32_t x)
  *  key find in 1 bucket (async)
  */
 static inline int
-find_key_in_bucket_GEN(const struct dcht_bucket_s * bk,
-                       uint32_t key)
+find_key_in_bucket_GEN (const struct dcht_bucket_s * bk,
+                        uint32_t key)
 {
         int pos;
 
@@ -194,9 +194,9 @@ find_key_in_bucket_GEN(const struct dcht_bucket_s * bk,
  * key find in 2 buckets (async)
  */
 static inline int
-find_key_in_bucket_pair_GEN(struct dcht_bucket_s ** bk_p,
-                            uint32_t key,
-                            int * pos_p)
+find_key_in_bucket_pair_GEN (struct dcht_bucket_s ** bk_p,
+                             uint32_t key,
+                             int * pos_p)
 {
         TRACER("K0 %08x %08x %08x %08x %08x %08x %08x %08x\n",
                bk_p[0]->key[0], bk_p[0]->key[1], bk_p[0]->key[2], bk_p[0]->key[3],
@@ -222,8 +222,8 @@ find_key_in_bucket_pair_GEN(struct dcht_bucket_s ** bk_p,
  *  number of key in a bucket
  */
 static inline unsigned
-number_of_keys_in_bucket_GEN(const struct dcht_bucket_s * bk,
-                             uint32_t key)
+number_of_keys_in_bucket_GEN (const struct dcht_bucket_s * bk,
+                              uint32_t key)
 {
         TRACER("bk %08x %08x %08x %08x %08x %08x %08x %08x\n",
                bk->key[0], bk->key[1], bk->key[2], bk->key[3],
@@ -243,9 +243,9 @@ number_of_keys_in_bucket_GEN(const struct dcht_bucket_s * bk,
  * Return the one with more key matches (async)
  */
 static inline int
-which_one_most_GEN(struct dcht_bucket_s ** bk_p,
-                   uint32_t key,
-                   unsigned * nb_p)
+which_one_most_GEN (struct dcht_bucket_s ** bk_p,
+                    uint32_t key,
+                    unsigned * nb_p)
 {
         int ret;
 
@@ -282,9 +282,9 @@ which_one_most_GEN(struct dcht_bucket_s ** bk_p,
  * find, for reader (sync)
  */
 static inline int
-find_key_val_in_bucket_pair_sync_GEN(struct dcht_bucket_s ** bk_p,
-                                     uint32_t key,
-                                     uint32_t * val_p)
+find_key_val_in_bucket_pair_sync_GEN (struct dcht_bucket_s ** bk_p,
+                                      uint32_t key,
+                                      uint32_t * val_p)
 {
         int i;
         int loop = 5;
@@ -323,7 +323,7 @@ find_key_val_in_bucket_pair_sync_GEN(struct dcht_bucket_s ** bk_p,
  * @return void
  */
 static inline void
-bucket_init_GEN(struct dcht_bucket_s * bk)
+bucket_init_GEN (struct dcht_bucket_s * bk)
 {
         for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++)
                 store_key(bk, pos, DCHT_SENTINEL_KEY);
@@ -371,8 +371,8 @@ static const struct arch_handler_s * arch_handler = &generic_handlers;
  *  key find in 1 bucket (async)
  */
 static inline int
-find_key_in_bucket_AVX2(const struct dcht_bucket_s * bk,
-                        uint32_t key)
+find_key_in_bucket_AVX2 (const struct dcht_bucket_s * bk,
+                         uint32_t key)
 {
         __m256i search_key = _mm256_set1_epi32(key);
 
@@ -396,9 +396,9 @@ find_key_in_bucket_AVX2(const struct dcht_bucket_s * bk,
  * key find in 2 buckets (async)
  */
 static inline int
-find_key_in_bucket_pair_AVX2(struct dcht_bucket_s ** bk_p,
-                             uint32_t key,
-                             int * pos_p)
+find_key_in_bucket_pair_AVX2 (struct dcht_bucket_s ** bk_p,
+                              uint32_t key,
+                              int * pos_p)
 {
         __m256i search_key = _mm256_set1_epi32(key);
         __m256i keys[2];
@@ -435,8 +435,8 @@ find_key_in_bucket_pair_AVX2(struct dcht_bucket_s ** bk_p,
  *  number of key in a bucket
  */
 static inline unsigned
-number_of_keys_in_bucket_AVX2(const struct dcht_bucket_s * bk,
-                              uint32_t key)
+number_of_keys_in_bucket_AVX2 (const struct dcht_bucket_s * bk,
+                               uint32_t key)
 {
         __m256i search_key = _mm256_set1_epi32(key);
 
@@ -457,9 +457,9 @@ number_of_keys_in_bucket_AVX2(const struct dcht_bucket_s * bk,
  * Return the one with more key matches (async)
  */
 static inline int
-which_one_most_AVX2(struct dcht_bucket_s ** bk_p,
-                    uint32_t key,
-                    unsigned * nb_p)
+which_one_most_AVX2 (struct dcht_bucket_s ** bk_p,
+                     uint32_t key,
+                     unsigned * nb_p)
 {
         __m256i search_key = _mm256_set1_epi32(key);
         int ret;
@@ -495,9 +495,9 @@ which_one_most_AVX2(struct dcht_bucket_s ** bk_p,
  * find, for reader (sync)
  */
 static inline int
-find_key_val_in_bucket_pair_sync_AVX2(struct dcht_bucket_s ** bk_p,
-                                      uint32_t key,
-                                      uint32_t * val_p)
+find_key_val_in_bucket_pair_sync_AVX2 (struct dcht_bucket_s ** bk_p,
+                                       uint32_t key,
+                                       uint32_t * val_p)
 {
         __m256i search_key = _mm256_set1_epi32(key);
         __m256i chks[2];
@@ -567,7 +567,7 @@ find_key_val_in_bucket_pair_sync_AVX2(struct dcht_bucket_s ** bk_p,
  * @return void
  */
 static inline void
-bucket_init_AVX2(struct dcht_bucket_s * bk)
+bucket_init_AVX2 (struct dcht_bucket_s * bk)
 {
         __m256i search_key = _mm256_set1_epi32(DCHT_SENTINEL_KEY);
         _mm256_store_si256((__m256i *) (volatile void *) bk->key, search_key);
@@ -582,8 +582,8 @@ bucket_init_AVX2(struct dcht_bucket_s * bk)
  * @return crc32c
  */
 static inline uint32_t
-crc32c32(uint32_t init,
-         uint32_t val)
+crc32c32 (uint32_t init,
+          uint32_t val)
 {
         return _mm_crc32_u32(init, val);
 }
@@ -602,7 +602,7 @@ static const struct arch_handler_s x86_avx2_handlers = {
  * check cpuid AVX2,BMI,SSE4_2(crc32c)
  */
 const struct arch_handler_s *
- __attribute__((weak)) x86_handler_get(void)
+ __attribute__((weak)) x86_handler_get (void)
 {
         const struct arch_handler_s * handler = arch_handler;
 
@@ -651,7 +651,7 @@ const struct arch_handler_s *
  *         Returns negative if not found.
  */
 static inline int
-find_vacancy(const struct dcht_bucket_s * bk)
+find_vacancy (const struct dcht_bucket_s * bk)
 {
         return FIND_KEY_IN_BUCKET(bk, DCHT_SENTINEL_KEY);
 }
@@ -663,7 +663,7 @@ find_vacancy(const struct dcht_bucket_s * bk)
  * @return if is full then true
  */
 static inline bool
-is_bucket_full(const struct dcht_bucket_s * bk)
+is_bucket_full (const struct dcht_bucket_s * bk)
 {
         return (find_vacancy(bk) < 0 ? 1 : 0);
 }
@@ -676,8 +676,8 @@ is_bucket_full(const struct dcht_bucket_s * bk)
  * @return if entried then true
  */
 static inline bool
-is_valid_entry(const struct dcht_bucket_s * bk,
-               int pos)
+is_valid_entry (const struct dcht_bucket_s * bk,
+                int pos)
 {
         return (bk->key[pos] != DCHT_SENTINEL_KEY);
 }
@@ -690,8 +690,8 @@ is_valid_entry(const struct dcht_bucket_s * bk,
  * @return void
  */
 static inline void
-del_key(struct dcht_bucket_s * bk,
-        int pos)
+del_key (struct dcht_bucket_s * bk,
+         int pos)
 {
         assert(0 <= pos && pos < (int) DCHT_BUCKET_ENTRY_SZ);
 
@@ -708,10 +708,10 @@ del_key(struct dcht_bucket_s * bk,
  * @return void
  */
 static inline void
-move_entry(struct dcht_bucket_s * dbk,
-           int dpos,
-           struct dcht_bucket_s * sbk,
-           int spos)
+move_entry (struct dcht_bucket_s * dbk,
+            int dpos,
+            struct dcht_bucket_s * sbk,
+            int spos)
 {
         uint32_t key = sbk->key[spos];
         uint32_t val = sbk->val[spos];
@@ -729,9 +729,9 @@ move_entry(struct dcht_bucket_s * dbk,
  * @return Returns the position on success, negative on failure
  */
 static inline int
-find_key_val(struct dcht_bucket_s * bk,
-             uint32_t key,
-             uint32_t * val_p)
+find_key_val (struct dcht_bucket_s * bk,
+              uint32_t key,
+              uint32_t * val_p)
 {
         int pos = -ENOENT;
 
@@ -753,7 +753,7 @@ find_key_val(struct dcht_bucket_s * bk,
  * @return integer
  */
 static inline uint64_t
-combine64ms1b(uint64_t v)
+combine64ms1b (uint64_t v)
 {
         v |= v >> 1;
         v |= v >> 2;
@@ -771,7 +771,7 @@ combine64ms1b(uint64_t v)
  * @return integer
  */
 static inline uint64_t
-align64pow2(uint64_t v)
+align64pow2 (uint64_t v)
 {
         v--;
         v = combine64ms1b(v);
@@ -787,9 +787,9 @@ align64pow2(uint64_t v)
  * @return void
  */
 static inline void
-buckets_fetch(struct dcht_hash_table_s *tbl,
-              struct dcht_bucket_s ** bk_pp,
-              uint32_t key)
+buckets_fetch (struct dcht_hash_table_s *tbl,
+               struct dcht_bucket_s ** bk_pp,
+               uint32_t key)
 {
         unsigned x, y, msk = tbl->mask;
         unsigned pos[2];
@@ -839,9 +839,9 @@ buckets_fetch(struct dcht_hash_table_s *tbl,
  * @return an empty position, if failed then negative
  */
 static inline int
-cuckoo_replace(struct dcht_hash_table_s * tbl,
-               struct dcht_bucket_s * bk,
-               int depth)
+cuckoo_replace (struct dcht_hash_table_s * tbl,
+                struct dcht_bucket_s * bk,
+                int depth)
 {
         struct dcht_bucket_s * another[DCHT_BUCKET_ENTRY_SZ];
 
@@ -889,7 +889,7 @@ cuckoo_replace(struct dcht_hash_table_s * tbl,
  * max buckets + 1
  */
 static inline unsigned
-nb_bcuckets(unsigned nb_entries)
+nb_bcuckets (unsigned nb_entries)
 {
         if (nb_entries < DCHT_NB_ENTRIES_MIN)
                 nb_entries = DCHT_NB_ENTRIES_MIN;
@@ -903,7 +903,7 @@ nb_bcuckets(unsigned nb_entries)
  * supported hash table API
  ************************************************************************/
 size_t
-dcht_hash_table_size(unsigned max_entries)
+dcht_hash_table_size (unsigned max_entries)
 {
         unsigned nb_buckets = nb_bcuckets(max_entries);
         size_t size = sizeof(struct dcht_bucket_s) * nb_buckets;
@@ -915,7 +915,7 @@ dcht_hash_table_size(unsigned max_entries)
 }
 
 void
-dcht_hash_clean(struct dcht_hash_table_s * tbl)
+dcht_hash_clean (struct dcht_hash_table_s * tbl)
 {
         for (unsigned i = 0; i < tbl->nb_buckets - 1; i++) {
                 prefetch(&tbl->buckets[i + 1]);
@@ -927,9 +927,9 @@ dcht_hash_clean(struct dcht_hash_table_s * tbl)
 }
 
 int
-dcht_hash_table_init(struct dcht_hash_table_s * tbl,
-                     size_t size,
-                     unsigned max_entries)
+dcht_hash_table_init (struct dcht_hash_table_s * tbl,
+                      size_t size,
+                      unsigned max_entries)
 {
         unsigned nb_buckets = 0;
         int ret = -EINVAL;
@@ -969,7 +969,7 @@ dcht_hash_table_init(struct dcht_hash_table_s * tbl,
 }
 
 struct dcht_hash_table_s *
-dcht_hash_table_create(unsigned max_entries)
+dcht_hash_table_create (unsigned max_entries)
 {
         size_t size = dcht_hash_table_size(max_entries);
         struct dcht_hash_table_s * tbl = aligned_alloc(DCHT_CACHELINE_SIZE, size);
@@ -982,18 +982,18 @@ dcht_hash_table_create(unsigned max_entries)
 }
 
 void
-dcht_hash_buckets_prefetch(struct dcht_hash_table_s * tbl,
-                           uint32_t key,
-                           struct dcht_bucket_s ** bk_p)
+dcht_hash_buckets_prefetch (struct dcht_hash_table_s * tbl,
+                            uint32_t key,
+                            struct dcht_bucket_s ** bk_p)
 {
         buckets_fetch(tbl, bk_p, key);
         TRACER("prefetched key:%u %p %p\n", key, bk_p[0], bk_p[1]);
 }
 
 int
-dcht_hash_find_in_buckets(uint32_t key,
-                          struct dcht_bucket_s ** bk_p,
-                          uint32_t * val_p)
+dcht_hash_find_in_buckets (uint32_t key,
+                           struct dcht_bucket_s ** bk_p,
+                           uint32_t * val_p)
 {
         int ret = FIND_VAL_IN_BUCKET_PAIR_SYNC(bk_p, key, val_p);
 
@@ -1003,9 +1003,9 @@ dcht_hash_find_in_buckets(uint32_t key,
 }
 
 int
-dcht_hash_find(struct dcht_hash_table_s * tbl,
-               uint32_t key,
-               uint32_t * val_p)
+dcht_hash_find (struct dcht_hash_table_s * tbl,
+                uint32_t key,
+                uint32_t * val_p)
 {
         struct dcht_bucket_s * bk_p[2];
 
@@ -1015,11 +1015,11 @@ dcht_hash_find(struct dcht_hash_table_s * tbl,
 }
 
 int
-dcht_hash_add_in_buckets(struct dcht_hash_table_s * tbl,
-                         struct dcht_bucket_s ** bk_p,
-                         uint32_t key,
-                         uint32_t val,
-                         bool skip_update)
+dcht_hash_add_in_buckets (struct dcht_hash_table_s * tbl,
+                          struct dcht_bucket_s ** bk_p,
+                          uint32_t key,
+                          uint32_t val,
+                          bool skip_update)
 {
         if (key == DCHT_SENTINEL_KEY) {
                 TRACER("invalid key:%u\n", key);
@@ -1098,9 +1098,9 @@ dcht_hash_add(struct dcht_hash_table_s * tbl,
 }
 
 int
-dcht_hash_del_in_buckets(struct dcht_hash_table_s * tbl,
-                         struct dcht_bucket_s ** bk_p,
-                         uint32_t key)
+dcht_hash_del_in_buckets (struct dcht_hash_table_s * tbl,
+                          struct dcht_bucket_s ** bk_p,
+                          uint32_t key)
 {
         int pos = -EINVAL;
         int ret = FIND_KEY_IN_BUCKET_PAIR(bk_p, key, &pos);
@@ -1116,8 +1116,8 @@ dcht_hash_del_in_buckets(struct dcht_hash_table_s * tbl,
 }
 
 int
-dcht_hash_del(struct dcht_hash_table_s * tbl,
-              uint32_t key)
+dcht_hash_del (struct dcht_hash_table_s * tbl,
+               uint32_t key)
 {
         struct dcht_bucket_s * bk_p[2];
 
@@ -1127,11 +1127,11 @@ dcht_hash_del(struct dcht_hash_table_s * tbl,
 }
 
 static inline int
-_hash_bk_walk(struct dcht_hash_table_s * tbl,
-              int (* bucket_cb)(struct dcht_hash_table_s *,
-                                const struct dcht_bucket_s *,
-                                void *),
-              void * arg)
+_hash_bk_walk (struct dcht_hash_table_s * tbl,
+               int (* bucket_cb)(struct dcht_hash_table_s *,
+                                 const struct dcht_bucket_s *,
+                                 void *),
+               void * arg)
 {
         int ret = 0;
         unsigned i;
@@ -1148,11 +1148,11 @@ _hash_bk_walk(struct dcht_hash_table_s * tbl,
 }
 
 int
-dcht_hash_bk_walk(struct dcht_hash_table_s * tbl,
-                  int (* bucket_cb)(struct dcht_hash_table_s *,
-                                   const struct dcht_bucket_s *,
-                                   void *),
-               void * arg)
+dcht_hash_bk_walk (struct dcht_hash_table_s * tbl,
+                   int (* bucket_cb)(struct dcht_hash_table_s *,
+                                     const struct dcht_bucket_s *,
+                                     void *),
+                   void * arg)
 {
         return _hash_bk_walk(tbl, bucket_cb, arg);
 }
@@ -1167,9 +1167,9 @@ struct walk_keyval_s {
 };
 
 static int
-_bucket_cb(struct dcht_hash_table_s * tbl,
-           const struct dcht_bucket_s * bk,
-           void * arg)
+_bucket_cb (struct dcht_hash_table_s * tbl,
+            const struct dcht_bucket_s * bk,
+            void * arg)
 {
         struct walk_keyval_s * walk_p = arg;
         int ret = 0;
@@ -1178,17 +1178,17 @@ _bucket_cb(struct dcht_hash_table_s * tbl,
                 if (bk->key[i] == DCHT_SENTINEL_KEY)
                         continue;
 
-                ret = walk_p->func_cb(tbl, bk->key[i], bk->val[i], arg);
+                ret = walk_p->func_cb(tbl, bk->key[i], bk->val[i], walk_p->arg);
         }
         return ret;
 }
 
 int
-dcht_hash_walk(struct dcht_hash_table_s * tbl,
-               int (* func_cb)(struct dcht_hash_table_s *,
-                               uint32_t, uint32_t,
-                               void *),
-               void * arg)
+dcht_hash_walk (struct dcht_hash_table_s * tbl,
+                int (* func_cb)(struct dcht_hash_table_s *,
+                                uint32_t, uint32_t,
+                                void *),
+                void * arg)
 {
         struct walk_keyval_s walk;
 
@@ -1198,25 +1198,32 @@ dcht_hash_walk(struct dcht_hash_table_s * tbl,
 }
 
 static int
-_bucket_verify_cb(struct dcht_hash_table_s * tbl,
-                  const struct dcht_bucket_s * bk,
-                  void * arg)
+_bucket_verify_cb (struct dcht_hash_table_s * tbl,
+                   const struct dcht_bucket_s * bk,
+                   void * arg)
 {
         int ret = 0;
         unsigned * nb_p = arg;
+        struct dcht_bucket_s * bk_p[DCHT_BUCKET_ENTRY_SZ][2];
+
+        /* prefetch in bucket */
+        for (int i = 0; i < (int) DCHT_BUCKET_ENTRY_SZ; i++) {
+                if (bk->key[i] == DCHT_SENTINEL_KEY)
+                        continue;
+                uint32_t key = bk->key[i];
+                dcht_hash_buckets_prefetch(tbl, key, bk_p[i]);
+        }
 
         for (int i = 0; i < (int) DCHT_BUCKET_ENTRY_SZ; i++) {
                 if (bk->key[i] == DCHT_SENTINEL_KEY)
                         continue;
 
                 uint32_t key = bk->key[i];
-                struct dcht_bucket_s * bk_p[2];
                 unsigned nb[2];
 
                 /* hash check */
-                dcht_hash_buckets_prefetch(tbl, key, bk_p);
-                int w = WHICH_ONE_MOST(bk_p, key, nb);
-                if (!(w >= 0 && bk == bk_p[w] && nb[w] == 1 && nb[(w + 1) & 1] == 0)) {
+                int w = WHICH_ONE_MOST(bk_p[i], key, nb);
+                if (!(w >= 0 && bk == bk_p[i][w] && nb[w] == 1 && nb[(w + 1) & 1] == 0)) {
                         TRACER("invalid w:%d bk:%p key:%u nb0:%u nb1:%u \n",
                                w, bk, key, nb[0], nb[1]);
                         ret = -EINVAL;
@@ -1228,7 +1235,7 @@ _bucket_verify_cb(struct dcht_hash_table_s * tbl,
 }
 
 int
-dcht_hash_verify(struct dcht_hash_table_s * tbl)
+dcht_hash_verify (struct dcht_hash_table_s * tbl)
 {
         unsigned nb = 0;
 
@@ -1244,7 +1251,7 @@ dcht_hash_verify(struct dcht_hash_table_s * tbl)
 }
 
 unsigned
-dcht_hash_bucket_keys_nb(const struct dcht_bucket_s * bk)
+dcht_hash_bucket_keys_nb (const struct dcht_bucket_s * bk)
 {
         return DCHT_BUCKET_ENTRY_SZ - NB_KEYS_IN_BUCKET(bk, DCHT_SENTINEL_KEY);
 }
@@ -1253,7 +1260,7 @@ dcht_hash_bucket_keys_nb(const struct dcht_bucket_s * bk)
  * unit test
  ***************************************************************************/
 int
-dcht_hash_utest(struct dcht_hash_table_s * tbl)
+dcht_hash_utest (struct dcht_hash_table_s * tbl)
 {
         struct dcht_bucket_s * bk_p[2], * bk;
         int pos, w;
