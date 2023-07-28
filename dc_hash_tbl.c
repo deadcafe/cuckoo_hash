@@ -18,6 +18,9 @@
 
 #include "dc_hash_tbl.h"
 
+#ifndef always_inline
+# define always_inline	static inline __attribute__ ((__always_inline__))
+#endif	/* !always_inline */
 
 #define ARRAYOF(_a)	(sizeof(_a)/sizeof(_a[0]))
 
@@ -41,7 +44,7 @@
 /******************************************************************
  * Table Reader|writer
  ******************************************************************/
-static inline void
+always_inline void
 store_key (struct dcht_bucket_s * bk,
            int pos,
            uint32_t key)
@@ -49,7 +52,7 @@ store_key (struct dcht_bucket_s * bk,
         atomic_store_explicit(&bk->key[pos], key, memory_order_release);
 }
 
-static inline void
+always_inline void
 store_val (struct dcht_bucket_s * bk,
            int pos,
            uint32_t val)
@@ -60,7 +63,7 @@ store_val (struct dcht_bucket_s * bk,
 /*
  * for writer thread
  */
-static inline void
+always_inline void
 store_key_val (struct dcht_bucket_s * bk,
                int pos,
                uint32_t key,
@@ -71,7 +74,7 @@ store_key_val (struct dcht_bucket_s * bk,
         atomic_store_explicit(&bk->key[pos], key, memory_order_release);
 }
 
-static inline uint32_t
+always_inline uint32_t
 load_key (const struct dcht_bucket_s * bk,
           int pos)
 {
@@ -79,7 +82,7 @@ load_key (const struct dcht_bucket_s * bk,
         return key;
 }
 
-static inline int
+always_inline int
 load_val (const struct dcht_bucket_s * bk,
           int pos,
           uint32_t key,
@@ -103,7 +106,7 @@ load_val (const struct dcht_bucket_s * bk,
  * @param memory pointer
  * @return void
  */
-static inline void
+always_inline void
 prefetch (const void *p)
 {
         //        asm volatile ("prefetchnta %[p]" : : [p] "m" (*(const volatile char *)p));
@@ -136,7 +139,7 @@ struct arch_handler_s {
 /*
  * @brief FNV-1a hash
  */
-static inline uint32_t
+always_inline uint32_t
 fnv1a (uint32_t init,
        uint32_t val)
 {
@@ -159,7 +162,7 @@ fnv1a (uint32_t init,
 /*
  * @brief 32bit byte swap
  */
-static inline uint32_t
+always_inline uint32_t
 bswap32 (uint32_t x)
 {
         x = ((x << 8) & 0xFF00FF00) | ((x >> 8) & 0x00FF00FF);
@@ -170,7 +173,7 @@ bswap32 (uint32_t x)
 /*
  *  key find in 1 bucket (async)
  */
-static inline int
+always_inline int
 find_key_in_bucket_GEN (const struct dcht_bucket_s * bk,
                         uint32_t key)
 {
@@ -193,7 +196,7 @@ find_key_in_bucket_GEN (const struct dcht_bucket_s * bk,
 /*
  * key find in 2 buckets (async)
  */
-static inline int
+always_inline int
 find_key_in_bucket_pair_GEN (struct dcht_bucket_s ** bk_p,
                              uint32_t key,
                              int * pos_p)
@@ -221,7 +224,7 @@ find_key_in_bucket_pair_GEN (struct dcht_bucket_s ** bk_p,
 /*
  *  number of key in a bucket
  */
-static inline unsigned
+always_inline unsigned
 number_of_keys_in_bucket_GEN (const struct dcht_bucket_s * bk,
                               uint32_t key)
 {
@@ -242,7 +245,7 @@ number_of_keys_in_bucket_GEN (const struct dcht_bucket_s * bk,
 /*
  * Return the one with more key matches (async)
  */
-static inline int
+always_inline int
 which_one_most_GEN (struct dcht_bucket_s ** bk_p,
                     uint32_t key,
                     unsigned * nb_p)
@@ -281,7 +284,7 @@ which_one_most_GEN (struct dcht_bucket_s ** bk_p,
 /*
  * find, for reader (sync)
  */
-static inline int
+always_inline int
 find_key_val_in_bucket_pair_sync_GEN (struct dcht_bucket_s ** bk_p,
                                       uint32_t key,
                                       uint32_t * val_p)
@@ -322,7 +325,7 @@ find_key_val_in_bucket_pair_sync_GEN (struct dcht_bucket_s ** bk_p,
  * @param bk: bucket
  * @return void
  */
-static inline void
+always_inline void
 bucket_init_GEN (struct dcht_bucket_s * bk)
 {
         for (int pos = 0; pos < (int) DCHT_BUCKET_ENTRY_SZ; pos++)
@@ -370,7 +373,7 @@ static const struct arch_handler_s * arch_handler = &generic_handlers;
 /*
  *  key find in 1 bucket (async)
  */
-static inline int
+always_inline int
 find_key_in_bucket_AVX2 (const struct dcht_bucket_s * bk,
                          uint32_t key)
 {
@@ -395,7 +398,7 @@ find_key_in_bucket_AVX2 (const struct dcht_bucket_s * bk,
 /*
  * key find in 2 buckets (async)
  */
-static inline int
+always_inline int
 find_key_in_bucket_pair_AVX2 (struct dcht_bucket_s ** bk_p,
                               uint32_t key,
                               int * pos_p)
@@ -434,7 +437,7 @@ find_key_in_bucket_pair_AVX2 (struct dcht_bucket_s ** bk_p,
 /*
  *  number of key in a bucket
  */
-static inline unsigned
+always_inline unsigned
 number_of_keys_in_bucket_AVX2 (const struct dcht_bucket_s * bk,
                                uint32_t key)
 {
@@ -456,7 +459,7 @@ number_of_keys_in_bucket_AVX2 (const struct dcht_bucket_s * bk,
 /*
  * Return the one with more key matches (async)
  */
-static inline int
+always_inline int
 which_one_most_AVX2 (struct dcht_bucket_s ** bk_p,
                      uint32_t key,
                      unsigned * nb_p)
@@ -494,7 +497,7 @@ which_one_most_AVX2 (struct dcht_bucket_s ** bk_p,
 /*
  * find, for reader (sync)
  */
-static inline int
+always_inline int
 find_key_val_in_bucket_pair_sync_AVX2 (struct dcht_bucket_s ** bk_p,
                                        uint32_t key,
                                        uint32_t * val_p)
@@ -566,7 +569,7 @@ find_key_val_in_bucket_pair_sync_AVX2 (struct dcht_bucket_s ** bk_p,
  * @param bk: bucket
  * @return void
  */
-static inline void
+always_inline void
 bucket_init_AVX2 (struct dcht_bucket_s * bk)
 {
         __m256i search_key = _mm256_set1_epi32(DCHT_SENTINEL_KEY);
@@ -581,7 +584,7 @@ bucket_init_AVX2 (struct dcht_bucket_s * bk)
  * @param target value
  * @return crc32c
  */
-static inline uint32_t
+always_inline uint32_t
 crc32c32 (uint32_t init,
           uint32_t val)
 {
@@ -650,7 +653,7 @@ const struct arch_handler_s *
  * @return Returns the position where a vacancy was found.
  *         Returns negative if not found.
  */
-static inline int
+always_inline int
 find_vacancy (const struct dcht_bucket_s * bk)
 {
         return FIND_KEY_IN_BUCKET(bk, DCHT_SENTINEL_KEY);
@@ -662,7 +665,7 @@ find_vacancy (const struct dcht_bucket_s * bk)
  * @param bk: bucket pointer
  * @return if is full then true
  */
-static inline bool
+always_inline bool
 is_bucket_full (const struct dcht_bucket_s * bk)
 {
         return (find_vacancy(bk) < 0 ? 1 : 0);
@@ -675,7 +678,7 @@ is_bucket_full (const struct dcht_bucket_s * bk)
  * @param pos: check entry position
  * @return if entried then true
  */
-static inline bool
+always_inline bool
 is_valid_entry (const struct dcht_bucket_s * bk,
                 int pos)
 {
@@ -689,7 +692,7 @@ is_valid_entry (const struct dcht_bucket_s * bk,
  * @param pos: delete position
  * @return void
  */
-static inline void
+always_inline void
 del_key (struct dcht_bucket_s * bk,
          int pos)
 {
@@ -707,7 +710,7 @@ del_key (struct dcht_bucket_s * bk,
  * @param spos: source entry position in sbk
  * @return void
  */
-static inline void
+always_inline void
 move_entry (struct dcht_bucket_s * dbk,
             int dpos,
             struct dcht_bucket_s * sbk,
@@ -728,7 +731,7 @@ move_entry (struct dcht_bucket_s * dbk,
  * @param val_p: Pointer to set the read value
  * @return Returns the position on success, negative on failure
  */
-static inline int
+always_inline int
 find_key_val (struct dcht_bucket_s * bk,
               uint32_t key,
               uint32_t * val_p)
@@ -752,7 +755,7 @@ find_key_val (struct dcht_bucket_s * bk,
  * @param v: input integer
  * @return integer
  */
-static inline uint64_t
+always_inline uint64_t
 combine64ms1b (uint64_t v)
 {
         v |= v >> 1;
@@ -770,7 +773,7 @@ combine64ms1b (uint64_t v)
  * @param input integer
  * @return integer
  */
-static inline uint64_t
+always_inline uint64_t
 align64pow2 (uint64_t v)
 {
         v--;
@@ -786,7 +789,7 @@ align64pow2 (uint64_t v)
  * @param key: entry key
  * @return void
  */
-static inline void
+always_inline void
 buckets_fetch (struct dcht_hash_table_s *tbl,
                struct dcht_bucket_s ** bk_pp,
                uint32_t key)
@@ -838,7 +841,7 @@ buckets_fetch (struct dcht_hash_table_s *tbl,
  * @param depth: Number of layers to go back by recursion
  * @return an empty position, if failed then negative
  */
-static inline int
+static int
 cuckoo_replace (struct dcht_hash_table_s * tbl,
                 struct dcht_bucket_s * bk,
                 int depth)
@@ -888,7 +891,7 @@ cuckoo_replace (struct dcht_hash_table_s * tbl,
 /*
  * max buckets + 1
  */
-static inline unsigned
+always_inline unsigned
 nb_bcuckets (unsigned nb_entries)
 {
         if (nb_entries < DCHT_NB_ENTRIES_MIN)
@@ -1126,7 +1129,7 @@ dcht_hash_del (struct dcht_hash_table_s * tbl,
         return dcht_hash_del_in_buckets(tbl, bk_p, key) >= 0 ? 0 : -ENOENT;
 }
 
-static inline int
+always_inline int
 _hash_bk_walk (struct dcht_hash_table_s * tbl,
                int (* bucket_cb)(struct dcht_hash_table_s *,
                                  const struct dcht_bucket_s *,
